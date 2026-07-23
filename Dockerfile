@@ -31,9 +31,19 @@ COPY skills ./seed-skills
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-# From here on, HOME points at the persistent volume Railway mounts at /data —
-# this is where onchainos's wallet session (~/.onchainos), okx-a2a's daemon state,
-# and Claude Code's own credentials/skills all end up living, so they survive redeploys.
+# Claude Code resolves its own skills/config directory from appuser's real home
+# (confirmed empirically — it does NOT follow the $HOME env var override the way
+# onchainos/okx-a2a do), so the OKX skills + our custom fulfillment skill have to be
+# installed into /home/appuser/.claude/skills directly, as appuser, at build time.
+USER appuser
+RUN npx --yes skills add okx/onchainos-skills --yes -g
+RUN mkdir -p /home/appuser/.claude/skills/olimpus-fulfillment \
+    && cp -r /app/seed-skills/olimpus-fulfillment/. /home/appuser/.claude/skills/olimpus-fulfillment/
+USER root
+
+# HOME points at the persistent volume Railway mounts at /data for everything that
+# DOES respect it — onchainos's wallet session (~/.onchainos) and okx-a2a's daemon
+# state both live here and survive redeploys.
 ENV HOME=/data
 ENV OKX_AGENT_TASK_HOME=/data/.okx-agent-task
 ENV PATH="/usr/local/bin:${PATH}"
