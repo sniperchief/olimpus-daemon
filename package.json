@@ -1,0 +1,22 @@
+{
+  "name": "olimpus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "bridge": "tsx src/bridge/aspBridge.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.4",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.2"
+  }
+}
