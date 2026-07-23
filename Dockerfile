@@ -1,7 +1,7 @@
 FROM node:22-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gosu \
+    && apt-get install -y --no-install-recommends curl ca-certificates gosu git \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code refuses its permission-bypass mode when running as root/UID 0 (a hard
