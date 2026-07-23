@@ -35,6 +35,9 @@ RUN chmod +x ./entrypoint.sh
 # (confirmed empirically — it does NOT follow the $HOME env var override the way
 # onchainos/okx-a2a do), so the OKX skills + our custom fulfillment skill have to be
 # installed into /home/appuser/.claude/skills directly, as appuser, at build time.
+# HOME must be switched to appuser's own home first — it was still /root from the
+# install steps above, which is not writable by appuser (npm cache EACCES otherwise).
+ENV HOME=/home/appuser
 USER appuser
 RUN npx --yes skills add okx/onchainos-skills --yes -g
 RUN mkdir -p /home/appuser/.claude/skills/olimpus-fulfillment \
