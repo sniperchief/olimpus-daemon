@@ -28,3 +28,26 @@ already-deployed `olimpus` Railway service. `PUBLIC_URL` here just points at it.
   secret `CLAUDE_CODE_OAUTH_TOKEN` (from running `claude setup-token` locally).
 - A one-time interactive shell into the container to run `onchainos wallet login` — the
   session then persists on the volume for subsequent deploys.
+
+## Critical gotcha: always log in as `appuser`, never as root
+
+`railway ssh` drops you into the container as **root**. The daemon itself runs as the
+unprivileged `appuser` (see Dockerfile — Claude Code refuses to run under root). This
+matters a lot for `onchainos wallet login`: **onchainos encrypts its session/keyring with
+a key tied to the specific OS user that logged in** — not just file ownership. A login
+run as root produces a `keyring.enc` that root can decrypt but `appuser` cannot, even
+though `appuser` owns the file and can read its raw bytes. The daemon will then fail
+every API call with a generic `"session expired, please login again"` error — which is
+misleading, since the session is fine, it's just undecryptable by the user that actually
+needs it.
+
+**Always run the login explicitly as `appuser`**, e.g.:
+
+```
+gosu appuser onchainos wallet login --phase init
+# open the printed URL, log in with the correct email
+gosu appuser onchainos wallet login --phase poll
+```
+
+Never run a bare `onchainos wallet login ...` in an SSH session without `gosu appuser`
+in front of it — it will "succeed" and silently produce a session the daemon can't use.
