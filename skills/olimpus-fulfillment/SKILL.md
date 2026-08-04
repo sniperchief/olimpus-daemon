@@ -24,22 +24,34 @@ onchainos agent common context <jobId> --role asp --agent-id 7108
 
 **Step 2 — extract the founder's input yourself** from that raw context, as a compact JSON object with this exact shape: `{"idea": "...", "targetAudience": "...", "primaryGoal": "..."}` (`targetAudience` is optional — omit the key if the task text doesn't mention one; `idea` and `primaryGoal` are required — infer a reasonable `primaryGoal` like "launch an MVP and validate product-market fit" if the founder didn't state one explicitly).
 
-**Step 3 — run the bridge with that JSON as the third argument:**
+**Step 3 — resolve the founder's agentId** (enables progress updates during the wait — best-effort, safe to skip if this fails):
 
 ```
-cd /app && node dist/bridge/aspBridge.js <jobId> 7108 '<founderInputJson>'
+onchainos agent active-tasks --role asp
+```
+
+Find the entry whose `jobId` matches this job and read its `counterpartyAgentId`. If this command fails or no matching entry is found, proceed anyway without it — just omit the 4th argument in Step 4 below.
+
+**Step 4 — run the bridge with the founder input as the third argument (and the resolved founder agentId as an optional 4th), in the foreground, with an explicit large timeout:**
+
+```
+cd /app && node dist/bridge/aspBridge.js <jobId> 7108 '<founderInputJson>' <founderAgentId>
 ```
 
 (On the production host this is a Linux container with `WORKDIR /app`; adjust the path only if running somewhere the repo genuinely lives elsewhere.)
 
+🛑 **When invoking this via the Bash tool, explicitly set `timeout: 1800000` (30 minutes) — do not leave it at a shorter default or guess a smaller value.** The bridge's own internal ceiling (`MAX_WAIT_MS` in `aspBridge.ts`) is 30 minutes, so anything less risks the tool force-backgrounding a run that was still on track to succeed.
+
 🛑 **The bridge takes the founder input as a CLI argument and does not call any LLM itself — it needs no Anthropic API key of its own, and none is configured in this environment.** Do not add `ANTHROPIC_API_KEY` back to the environment to "help" the bridge; it doesn't use one, and setting it would make Claude Code CLI's own dispatch billing pick it up instead of your subscription auth, reintroducing real metered costs.
 
-Substitute `<jobId>` with the actual jobId from the triggering event, and `<founderInputJson>` with the JSON object from Step 2 (single-quoted so the shell passes it through as one argument).
+Substitute `<jobId>` with the actual jobId from the triggering event, `<founderInputJson>` with the JSON object from Step 2 (single-quoted so the shell passes it through as one argument), and `<founderAgentId>` with the value resolved in Step 3 (omit this last argument entirely if Step 3 didn't resolve one — the bridge works fine without it, it just skips progress notifications).
 
 🛑 **Run this in the FOREGROUND — never with `run_in_background: true` or any other backgrounding mechanism.** This dispatch is a single, one-shot CLI invocation (`okx-a2a ai exec`), not a persistent session — when this turn ends, the whole process exits, and anything launched in the background is killed with it, before it can possibly finish. The bridge takes several minutes (it runs the full 7-persona Council pipeline); you must block and wait for it to exit on its own within this same turn, however long that takes. Do not end the turn, do not report a result, and do not treat "it's still running" as done until the foreground command itself returns.
 
-Steps 1-2 above (fetch context, extract founder input) are your own responsibility as the dispatching sub-session. Once you invoke it, the bridge script itself handles the rest of the pipeline:
-1. Calls the deployed Olimpus Council engine (a separate A2A server on Railway) via `message/send`, and polls `tasks/get` until the 7-persona reviewed pipeline completes (this can take several minutes).
+🛑 **If the command gets force-backgrounded anyway despite the 30-minute timeout, this is NOT a failure and does NOT mean the turn can end.** Immediately call `TaskOutput` on that background task ID with `block: true` and a large `timeout` (e.g. `600000`). If it returns and the task is still not done, call `TaskOutput` again the same way — repeat as many times as it takes. **Never end the turn while the background task is still running, even if you intend to "wait for a notification" or "check back later."** There is no later — this dispatch is a one-shot process, and the instant the turn ends the whole process exits, silently killing any still-running background task along with it, destroying real, already-in-progress, already-escrow-funded work with no trace and no recovery. (This exact failure happened for real: job `0x8635cf...` was accepted and escrow locked, the bridge hit a 10-minute timeout and was backgrounded, the sub-session said "I'll wait for it to finish rather than poll... I'll be notified automatically" and ended its turn — the background task was killed immediately, and the job was permanently stuck at `accepted` with no deliverable ever submitted. Saying "I'll wait" is not the same as blocking with `TaskOutput`; only the latter actually works.)
+
+Steps 1-3 above (fetch context, extract founder input, resolve founder agentId) are your own responsibility as the dispatching sub-session. Once you invoke it, the bridge script itself handles the rest of the pipeline:
+1. Calls the deployed Olimpus Council engine (a separate A2A server on Railway) via `message/send`, and polls `tasks/get` until the 7-persona reviewed pipeline completes (this can take several minutes) — sending the founder brief progress updates via XMTP as each Council stage begins, if a founder agentId was provided.
 2. Formats the completed result into a Startup Workspace markdown document.
 3. Calls `onchainos agent deliver` itself with that file.
 4. On any failure, it calls `onchainos agent mark-failed` itself — do not do this manually in its place.

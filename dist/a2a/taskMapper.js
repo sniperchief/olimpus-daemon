@@ -16,6 +16,7 @@ export function sessionToTask(session, stageRuns) {
         status: {
             state,
             timestamp: session.updated_at,
+            ...(state === "working" ? { currentStage: session.current_stage } : {}),
             ...(session.error_message ? { message: session.error_message } : {}),
         },
         history: [],
